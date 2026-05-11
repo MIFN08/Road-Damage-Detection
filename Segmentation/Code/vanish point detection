@@ -1,0 +1,95 @@
+import cv2
+import numpy as np
+import os
+
+# 1. SETUP
+video_path = 'video6.mp4'   # make sure extension is correct
+output_dir = 'SUBMISSION_FINAL1'
+os.makedirs(output_dir, exist_ok=True)
+
+cap = cv2.VideoCapture(video_path)
+
+if not cap.isOpened():
+    print("Error: Cannot open video!")
+    exit()
+
+frame_count = 0
+
+while cap.isOpened():
+    ret, frame = cap.read()   # ✅ FIXED
+    if not ret:
+        break
+
+    h, w = frame.shape[:2]
+
+    # --- STAGE 1: GRAYSCALE ---
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # --- STAGE 2: ENHANCEMENT ---
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # --- STAGE 3: EDGE DETECTION ---
+    edges = cv2.Canny(blur, 50, 150)
+
+    # --- STAGE 4: ROI (focus on road area) ---
+    mask = np.zeros_like(edges)
+    pts = np.array([[
+        (int(w * 0.1), h),
+        (int(w * 0.45), int(h * 0.6)),
+        (int(w * 0.55), int(h * 0.6)),
+        (int(w * 0.9), h)
+    ]])
+    cv2.fillPoly(mask, pts, 255)
+
+    roi_edges = cv2.bitwise_and(edges, mask)
+
+    # --- STAGE 5: LINE DETECTION ---
+    lines = cv2.HoughLinesP(
+        roi_edges,
+        1,
+        np.pi / 180,
+        threshold=100,
+        minLineLength=80,
+        maxLineGap=50
+    )
+
+    # --- STAGE 6: VANISH DETECTION ---
+    if lines is None:
+        line_count = 0
+    else:
+        line_count = len(lines)
+
+    # 🔥 MAIN LOGIC (tune if needed)
+    is_vanished = line_count < 3
+
+    # --- STAGE 7: DISPLAY ---
+    final_display = frame.copy()
+
+    if is_vanished:
+        cv2.putText(final_display, "VANISHED",
+                    (50, 100),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.5,
+                    (0, 0, 255),
+                    3)
+
+        # SAVE IMAGES
+        prefix = f"frame_{frame_count}_"
+        cv2.imwrite(os.path.join(output_dir, prefix + "1_Original.jpg"), frame)
+        cv2.imwrite(os.path.join(output_dir, prefix + "2_Gray.jpg"), gray)
+        cv2.imwrite(os.path.join(output_dir, prefix + "3_Edges.jpg"), roi_edges)
+        cv2.imwrite(os.path.join(output_dir, prefix + "4_Final.jpg"), final_display)
+
+        print(f"Saved vanished frame: {frame_count} (lines={line_count})")
+
+    # SHOW OUTPUT
+    cv2.imshow("Final", final_display)
+    cv2.imshow("Edges", roi_edges)
+
+    frame_count += 1
+
+    if cv2.waitKey(30) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
